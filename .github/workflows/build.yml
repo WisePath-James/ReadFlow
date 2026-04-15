@@ -10,10 +10,6 @@ on:
       - main
       - master
 
-env:
-  JAVA_VERSION: '17'
-  GRADLE_OPTS: "-Xmx4096m -Dorg.gradle.daemon=false"
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,36 +19,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up JDK
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          java-version: ${{ env.JAVA_VERSION }}
+          java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK
-        run: |
-          mkdir -p $HOME/android-sdk
-          cd $HOME/android-sdk
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
-          unzip -q -o cmdline-tools.zip
-          mkdir -p cmdline-tools/latest
-          mv cmdline-tools/* cmdline-tools/latest/ 2>/dev/null || true
-          echo "sdk.dir=$HOME/android-sdk" > $GITHUB_WORKSPACE/android/local.properties
-
-      - name: Install Android SDK components
-        run: |
-          export ANDROID_HOME=$HOME/android-sdk
-          export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
-          yes | sdkmanager --licenses || true
-          sdkmanager --install "platforms;android-34" "build-tools;34.0.0" "platform-tools" --sdk_root=$ANDROID_HOME
+      - name: Setup Gradle
+        uses: gradle/gradle-setup-action@v3
+        with:
+          gradle-version: "8.4"
 
       - name: Build with Gradle
         working-directory: ./android
-        run: |
-          export ANDROID_HOME=$HOME/android-sdk
-          export JAVA_HOME=${{ env.JAVA_HOME }}
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
