@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ReadFlow</string>
+    <string name="library">Library</string>
+    <string name="folders">Folders</string>
+    <string name="documents">Documents</string>
+    <string name="recent">Recent</string>
+    <string name="pinned">Pinned</string>
+    <string name="archive">Archive</string>
+    <string name="settings">Settings</string>
+    <string name="search">Search</string>
+    <string name="upload">Upload</string>
+    <string name="delete">Delete</string>
+    <string name="cancel">Cancel</string>
+    <string name="confirm">Confirm</string>
+    <string name="save">Save</string>
+    <string name="edit">Edit</string>
+    <string name="highlight">Highlight</string>
+    <string name="underline">Underline</string>
+    <string name="strikeout">Strikeout</string>
+    <string name="note">Note</string>
+    <string name="copy">Copy</string>
+    <string name="share">Share</string>
+    <string name="ai_translate">AI Translate</string>
+    <string name="ai_explain">AI Explain</string>
+    <string name="ai_summarize">AI Summarize</string>
+    <string name="ai_quick_ask">Quick Ask</string>
+    <string name="deep_analysis">Deep Analysis</string>
+    <string name="reading_progress">Reading Progress</string>
+    <string name="continue_reading">Continue Reading</string>
+    <string name="create_folder">Create Folder</string>
+    <string name="rename">Rename</string>
+    <string name="move_to">Move to</string>
+    <string name="no_documents">No documents yet</string>
+    <string name="upload_document">Upload a document to get started</string>
+    <string name="processing">Processing...</string>
+    <string name="page">Page</string>
+    <string name="of">of</string>
+    <string name="loading">Loading...</string>
+    <string name="error">Error</string>
+    <string name="retry">Retry</string>
+    <string name="light_theme">Light</string>
+    <string name="dark_theme">Dark</string>
+    <string name="sepia_theme">Sepia</string>
+</resources>

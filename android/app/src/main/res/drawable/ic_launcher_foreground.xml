@@ -1,0 +1,22 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:scaleX="0.4"
+        android:scaleY="0.4"
+        android:translateX="32.4"
+        android:translateY="32.4">
+        <!-- Book icon -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M54,10C54,10 54,10 54,10L54,98C54,98 54,98 54,98L54,10L54,10ZM48,16L48,92C48,92 48,92 48,92C33.6,84 21.6,76 12,70L12,22C21.6,28 33.6,36 48,44L48,16ZM60,16L60,44C74.4,36 86.4,28 96,22L96,70C86.4,76 74.4,84 60,92L60,16Z"/>
+        <!-- AI sparkles -->
+        <path
+            android:fillColor="#FFD700"
+            android:pathData="M78,8L80,14L86,12L80,16L78,22L76,16L70,12L76,14L78,8Z"/>
+        <path
+            android:fillColor="#FFD700"
+            android:pathData="M88,28L89,32L93,31L89,34L88,38L87,34L83,31L87,32L88,28Z"/>
+    </group>
+</vector>
