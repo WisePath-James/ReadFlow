@@ -1,0 +1,75 @@
+# .gitignore
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Build outputs
+dist/
+build/
+*.o
+*.obj
+*.dSYM/
+*.ipa
+*.app
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# iOS specific
+Pods/
+Podfile.lock
+DerivedData/
+*.xcworkspace
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcodeproj/xcshareddata/WorkspaceSettings.xcsettings
+.swiftpm/
+.swiftpm/xcode/
+
+# Supabase
+.supabase/
+
+# Logs
+logs/
+*.log
+
+# Cache
+.cache/
+.npm/
+.yarn/
+
+# Temporary
+tmp/
+temp/
+*.tmp
+
+# Local development
+dev.db
+*.sqlite
+*.sqlite3
+
+# Archives
+*.zip
+*.tar.gz
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Misc
+.DS_Store
+*.DS_Store
