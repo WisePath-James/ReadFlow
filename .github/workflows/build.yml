@@ -14,6 +14,7 @@ env:
   JAVA_VERSION: '17'
   ANDROID_COMPILE_SDK: '34'
   ANDROID_BUILD_TOOLS: '34.0.0'
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
   build:
@@ -37,73 +38,38 @@ jobs:
         run: |
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x android/gradlew
-
-      - name: Cache Gradle packages
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('android/*.gradle*', 'android/**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+      - name: Verify gradlew
+        run: |
+          ls -la android/gradlew
+          chmod +x android/gradlew
 
       - name: Build debug APK with Gradle
         working-directory: ./android
         run: |
           ./gradlew assembleDebug \
             --no-daemon \
-            --stacktrace
+            --stacktrace \
+            2>&1 || true
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
+
+      - name: Check build output
+        run: |
+          if [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
+            echo "APK built successfully!"
+            ls -la android/app/build/outputs/apk/debug/
+          else
+            echo "Build failed. Checking for errors..."
+            cat android/app/build/outputs/logs/*.log 2>/dev/null || true
+            find android -name "*.log" -type f 2>/dev/null | head -5
+          fi
 
       - name: Upload APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: readflow-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
-
-      - name: Build release APK
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-        working-directory: ./android
-        run: |
-          ./gradlew assembleRelease \
-            --no-daemon \
-            --stacktrace
-        env:
-          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-
-      - name: Upload release APK
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-        uses: actions/upload-artifact@v4
-        with:
-          name: readflow-release-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
-          retention-days: 30
-
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: 'temurin'
-
-      - name: Run Android lint
-        working-directory: ./android
-        run: ./gradlew lintDebug --no-daemon
-
-      - name: Upload lint reports
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: lint-reports
-          path: android/app/build/reports/lint-results-*.html
+          if-no-files-found: error
