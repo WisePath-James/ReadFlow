@@ -4,12 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.readflow.app.data.repository.DocumentRepository
 import com.readflow.app.domain.model.Document
+import com.readflow.app.domain.model.FileType
 import com.readflow.app.domain.model.Folder
+import com.readflow.app.domain.model.ProcessingStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -18,11 +19,12 @@ data class LibraryUiState(
     val folders: List<Folder> = emptyList(),
     val recentDocuments: List<Document> = emptyList(),
     val pinnedDocuments: List<Document> = emptyList(),
-    val documentsInFolder: List<Document> = emptyList(),
     val searchResults: List<Document> = emptyList(),
     val selectedFolderId: String? = null,
     val isLoading: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val isUploading: Boolean = false,
+    val uploadProgress: Float = 0f
 )
 
 @HiltViewModel
@@ -36,39 +38,32 @@ class LibraryViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
 
     init {
-        viewModelScope.launch {
-            combine(
-                documentRepository.documents,
-                documentRepository.folders,
-                documentRepository.recentDocuments,
-                documentRepository.pinnedDocuments,
-                documentRepository.documentsInFolder(_uiState.value.selectedFolderId),
-                _searchQuery
-            ) { documents, folders, recent, pinned, inFolder, query ->
-                val searchResults = if (query.isNotEmpty()) {
-                    documents.filter { it.title.contains(query, ignoreCase = true) }
-                } else emptyList()
+        loadData()
+    }
 
-                LibraryUiState(
+    private fun loadData() {
+        viewModelScope.launch {
+            documentRepository.documents.collect { documents ->
+                _uiState.value = _uiState.value.copy(
                     documents = documents,
-                    folders = folders,
-                    recentDocuments = recent,
-                    pinnedDocuments = pinned,
-                    documentsInFolder = inFolder,
-                    searchResults = searchResults,
-                    selectedFolderId = _uiState.value.selectedFolderId
+                    recentDocuments = documents.take(5),
+                    pinnedDocuments = documents.filter { it.isPinned }
                 )
-            }.collect { state ->
-                _uiState.value = state
+            }
+        }
+
+        viewModelScope.launch {
+            documentRepository.folders.collect { folders ->
+                _uiState.value = _uiState.value.copy(folders = folders)
             }
         }
     }
 
     fun selectFolder(folderId: String?) {
+        _uiState.value = _uiState.value.copy(selectedFolderId = folderId)
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(selectedFolderId = folderId)
             documentRepository.getDocumentsInFolder(folderId).collect { docs ->
-                _uiState.value = _uiState.value.copy(documentsInFolder = docs)
+                _uiState.value = _uiState.value.copy(documents = docs)
             }
         }
     }
@@ -104,9 +99,9 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    fun moveDocument(documentId: String, folderId: String?) {
+    fun moveDocument(documentId: String, targetFolderId: String?) {
         viewModelScope.launch {
-            documentRepository.moveDocumentToFolder(documentId, folderId)
+            documentRepository.moveDocumentToFolder(documentId, targetFolderId)
         }
     }
 
@@ -114,5 +109,44 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             documentRepository.togglePin(documentId)
         }
+    }
+
+    fun importDocument(filePath: String, fileName: String, fileType: FileType) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isUploading = true, uploadProgress = 0f)
+
+            try {
+                _uiState.value = _uiState.value.copy(uploadProgress = 0.3f)
+
+                val document = documentRepository.addDocument(
+                    title = fileName.substringBeforeLast("."),
+                    filePath = filePath,
+                    fileType = fileType
+                )
+
+                _uiState.value = _uiState.value.copy(uploadProgress = 0.8f)
+
+                // Simulate processing
+                documentRepository.updateDocumentStatus(
+                    document.id,
+                    ProcessingStatus.COMPLETED
+                )
+
+                _uiState.value = _uiState.value.copy(uploadProgress = 1f)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    error = e.message ?: "Upload failed"
+                )
+            } finally {
+                _uiState.value = _uiState.value.copy(
+                    isUploading = false,
+                    uploadProgress = 0f
+                )
+            }
+        }
+    }
+
+    fun clearError() {
+        _uiState.value = _uiState.value.copy(error = null)
     }
 }

@@ -6,6 +6,7 @@ import com.readflow.app.domain.model.AnchorMeta
 import com.readflow.app.domain.model.Note
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import java.util.UUID
 import javax.inject.Inject

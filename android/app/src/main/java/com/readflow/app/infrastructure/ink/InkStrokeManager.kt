@@ -2,6 +2,7 @@ package com.readflow.app.infrastructure.ink
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import com.readflow.app.domain.model.InkTool
 import com.readflow.app.domain.model.Point
 import com.readflow.app.domain.model.Stroke

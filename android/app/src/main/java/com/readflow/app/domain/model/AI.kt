@@ -82,10 +82,12 @@ data class AIRequest(
     val documentId: String,
     val pageIndex: Int,
     val selectionText: String,
+    val question: String? = null,
     val currentPageText: String? = null,
     val prevPagesText: String? = null,
     val nextPagesText: String? = null,
     val pageImageBase64: String? = null,
+    val documentTitle: String? = null,
     val includeWeakContext: Boolean = false
 )
 

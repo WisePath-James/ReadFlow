@@ -131,19 +131,20 @@ class DocumentRepository @Inject constructor(
      * 获取文件夹树
      */
     fun getFolderTree(): List<FolderTreeNode> {
+        return buildTreeRecursively(null, 0)
+    }
+
+    private fun buildTreeRecursively(parent: Folder?, depth: Int): List<FolderTreeNode> {
         val allFolders = _folders.value
-        val buildTree: (Folder?, Int) -> List<FolderTreeNode> = { parent, depth ->
-            allFolders
-                .filter { it.parentFolderId == parent?.id }
-                .map { folder ->
-                    FolderTreeNode(
-                        folder = folder,
-                        children = buildTree(folder, depth + 1),
-                        depth = depth
-                    )
-                }
-        }
-        return buildTree(null, 0)
+        return allFolders
+            .filter { it.parentFolderId == parent?.id }
+            .map { folder ->
+                FolderTreeNode(
+                    folder = folder,
+                    children = buildTreeRecursively(folder, depth + 1),
+                    depth = depth
+                )
+            }
     }
 
     /**

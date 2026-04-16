@@ -1,5 +1,8 @@
 package com.readflow.app.ui.library
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -15,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -35,6 +39,43 @@ fun LibraryScreen(
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var showSearchBar by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var showDocumentMenu by remember { mutableStateOf<String?>(null) }
+    var documentToDelete by remember { mutableStateOf<Document?>(null) }
+    var documentToMove by remember { mutableStateOf<Document?>(null) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var newFolderName by remember { mutableStateOf("") }
+    var selectedFolderForMove by remember { mutableStateOf<String?>(null) }
+
+    val context = LocalContext.current
+
+    // File picker launcher
+    val pdfLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        uri?.let {
+            val inputStream = context.contentResolver.openInputStream(it)
+            val fileName = context.contentResolver.query(it, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                cursor.moveToFirst()
+                cursor.getString(nameIndex)
+            } ?: "document.pdf"
+
+            // Copy to app storage
+            val destFile = java.io.File(context.filesDir, "documents/$fileName")
+            destFile.parentFile?.mkdirs()
+            inputStream?.use { input ->
+                destFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+
+            viewModel.importDocument(
+                filePath = destFile.absolutePath,
+                fileName = fileName,
+                fileType = FileType.PDF
+            )
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -61,7 +102,9 @@ fun LibraryScreen(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { /* TODO: 打开文件选择器 */ },
+                onClick = {
+                    pdfLauncher.launch(arrayOf("application/pdf", "application/epub+zip", "text/plain", "text/markdown"))
+                },
                 containerColor = MaterialTheme.colorScheme.primary
             ) {
                 Icon(Icons.Default.Add, contentDescription = "上传文档")
@@ -75,7 +118,7 @@ fun LibraryScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 搜索栏
+            // Search bar
             if (showSearchBar) {
                 item {
                     OutlinedTextField(
@@ -103,8 +146,28 @@ fun LibraryScreen(
                 }
             }
 
+            // Upload progress
+            if (uiState.isUploading) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp)
+                        ) {
+                            Text("导入文档中...", style = MaterialTheme.typography.bodyMedium)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LinearProgressIndicator(
+                                progress = uiState.uploadProgress,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+            }
+
             // Continue Reading
-            if (uiState.recentDocuments.isNotEmpty()) {
+            if (uiState.recentDocuments.isNotEmpty() && searchQuery.isEmpty()) {
                 item {
                     SectionHeader(title = "Continue Reading", icon = Icons.Default.MenuBook)
                 }
@@ -115,7 +178,8 @@ fun LibraryScreen(
                         items(uiState.recentDocuments) { document ->
                             DocumentCard(
                                 document = document,
-                                onClick = { onDocumentClick(document.id) }
+                                onClick = { onDocumentClick(document.id) },
+                                onLongClick = { showDocumentMenu = document.id }
                             )
                         }
                     }
@@ -123,7 +187,7 @@ fun LibraryScreen(
             }
 
             // Pinned Documents
-            if (uiState.pinnedDocuments.isNotEmpty()) {
+            if (uiState.pinnedDocuments.isNotEmpty() && searchQuery.isEmpty()) {
                 item {
                     SectionHeader(title = "Pinned", icon = Icons.Default.PushPin)
                 }
@@ -135,6 +199,7 @@ fun LibraryScreen(
                             DocumentCard(
                                 document = document,
                                 onClick = { onDocumentClick(document.id) },
+                                onLongClick = { showDocumentMenu = document.id },
                                 isPinned = true
                             )
                         }
@@ -143,46 +208,46 @@ fun LibraryScreen(
             }
 
             // Folders
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    SectionHeader(title = "Folders", icon = Icons.Default.Folder)
-                    TextButton(onClick = { showCreateFolderDialog = true }) {
-                        Icon(Icons.Default.CreateNewFolder, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("New")
-                    }
-                }
-            }
-
-            item {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // 根目录
-                    item {
-                        FolderChip(
-                            folder = null,
-                            onClick = { viewModel.selectFolder(null) },
-                            isSelected = uiState.selectedFolderId == null
-                        )
-                    }
-
-                    items(uiState.folders) { folder ->
-                        FolderChip(
-                            folder = folder,
-                            onClick = { viewModel.selectFolder(folder.id) },
-                            isSelected = uiState.selectedFolderId == folder.id
-                        )
-                    }
-                }
-            }
-
-            // Documents in selected folder
             if (searchQuery.isEmpty()) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        SectionHeader(title = "Folders", icon = Icons.Default.Folder)
+                        TextButton(onClick = { showCreateFolderDialog = true }) {
+                            Icon(Icons.Default.CreateNewFolder, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("New")
+                        }
+                    }
+                }
+
+                item {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Root folder
+                        item {
+                            FolderChip(
+                                folder = null,
+                                onClick = { viewModel.selectFolder(null) },
+                                isSelected = uiState.selectedFolderId == null
+                            )
+                        }
+
+                        items(uiState.folders) { folder ->
+                            FolderChip(
+                                folder = folder,
+                                onClick = { viewModel.selectFolder(folder.id) },
+                                isSelected = uiState.selectedFolderId == folder.id
+                            )
+                        }
+                    }
+                }
+
+                // Documents
                 item {
                     SectionHeader(
                         title = if (uiState.selectedFolderId == null) "All Documents" else "Documents",
@@ -190,41 +255,65 @@ fun LibraryScreen(
                     )
                 }
 
-                if (uiState.documentsInFolder.isEmpty()) {
+                if (uiState.documents.isEmpty()) {
                     item {
-                        EmptyState()
+                        EmptyState(onImportClick = {
+                            pdfLauncher.launch(arrayOf("application/pdf"))
+                        })
                     }
                 } else {
-                    items(uiState.documentsInFolder) { document ->
+                    items(uiState.documents) { document ->
                         DocumentListItem(
                             document = document,
                             onClick = { onDocumentClick(document.id) },
-                            onPin = { viewModel.togglePin(document.id) },
-                            onDelete = { viewModel.deleteDocument(document.id) }
+                            onDelete = {
+                                documentToDelete = document
+                                showDeleteConfirmDialog = true
+                            },
+                            onMove = {
+                                documentToMove = document
+                            },
+                            onTogglePin = { viewModel.togglePin(document.id) }
                         )
                     }
                 }
             } else {
                 // Search results
                 item {
-                    SectionHeader(title = "Search Results", icon = Icons.Default.Search)
+                    SectionHeader(
+                        title = "Search Results (${uiState.searchResults.size})",
+                        icon = Icons.Default.Search
+                    )
                 }
 
                 if (uiState.searchResults.isEmpty()) {
                     item {
-                        Text(
-                            text = "No results found",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Card(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    Icons.Default.SearchOff,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    "No documents found",
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                            }
+                        }
                     }
                 } else {
                     items(uiState.searchResults) { document ->
                         DocumentListItem(
                             document = document,
-                            onClick = { onDocumentClick(document.id) },
-                            onPin = { viewModel.togglePin(document.id) },
-                            onDelete = { viewModel.deleteDocument(document.id) }
+                            onClick = { onDocumentClick(document.id) }
                         )
                     }
                 }
@@ -232,107 +321,257 @@ fun LibraryScreen(
         }
     }
 
-    // Create Folder Dialog
+    // Create folder dialog
     if (showCreateFolderDialog) {
-        CreateFolderDialog(
-            onDismiss = { showCreateFolderDialog = false },
-            onCreate = { name, color ->
-                viewModel.createFolder(name, uiState.selectedFolderId, color)
-                showCreateFolderDialog = false
+        AlertDialog(
+            onDismissRequest = { showCreateFolderDialog = false },
+            title = { Text("Create Folder") },
+            text = {
+                OutlinedTextField(
+                    value = newFolderName,
+                    onValueChange = { newFolderName = it },
+                    label = { Text("Folder name") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (newFolderName.isNotBlank()) {
+                            viewModel.createFolder(newFolderName)
+                            newFolderName = ""
+                            showCreateFolderDialog = false
+                        }
+                    }
+                ) {
+                    Text("Create")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateFolderDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Delete confirmation dialog
+    if (showDeleteConfirmDialog && documentToDelete != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showDeleteConfirmDialog = false
+                documentToDelete = null
+            },
+            title = { Text("Delete Document") },
+            text = { Text("Are you sure you want to delete \"${documentToDelete?.title}\"? This action cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        documentToDelete?.let { viewModel.deleteDocument(it.id) }
+                        showDeleteConfirmDialog = false
+                        documentToDelete = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showDeleteConfirmDialog = false
+                    documentToDelete = null
+                }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Move document dialog
+    if (documentToMove != null) {
+        AlertDialog(
+            onDismissRequest = { documentToMove = null },
+            title = { Text("Move to Folder") },
+            text = {
+                Column {
+                    Text("Select destination folder:")
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Root option
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                viewModel.moveDocument(documentToMove!!.id, null)
+                                documentToMove = null
+                            }
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Folder, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Root (No Folder)")
+                    }
+                    
+                    uiState.folders.forEach { folder ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.moveDocument(documentToMove!!.id, folder.id)
+                                    documentToMove = null
+                                }
+                                .padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Folder, contentDescription = null, tint = try {
+                                Color(android.graphics.Color.parseColor(folder.color))
+                            } catch (e: Exception) {
+                                MaterialTheme.colorScheme.primary
+                            })
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(folder.name)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { documentToMove = null }) {
+                    Text("Cancel")
+                }
             }
         )
     }
 }
 
 @Composable
-private fun SectionHeader(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+fun SectionHeader(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector
+) {
     Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(vertical = 8.dp)
+        modifier = Modifier.padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = icon,
+            icon,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(24.dp)
+            modifier = Modifier.size(20.dp)
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-            text = title,
+            title,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
         )
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DocumentCard(
+fun FolderChip(
+    folder: Folder?,
+    onClick: () -> Unit,
+    isSelected: Boolean
+) {
+    FilterChip(
+        selected = isSelected,
+        onClick = onClick,
+        label = {
+            Text(if (folder == null) "All" else folder.name)
+        },
+        leadingIcon = {
+            Icon(
+                if (folder == null) Icons.Default.FolderOpen else Icons.Default.Folder,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    )
+}
+
+@Composable
+fun DocumentCard(
     document: Document,
     onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
     isPinned: Boolean = false
 ) {
     Card(
         modifier = Modifier
-            .width(160.dp)
+            .width(140.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp)
-        ) {
+        Column {
+            // Thumbnail placeholder
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(80.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
+                    .height(100.dp)
+                    .background(
+                        when (document.processingStatus) {
+                            ProcessingStatus.COMPLETED -> MaterialTheme.colorScheme.primaryContainer
+                            ProcessingStatus.PROCESSING -> MaterialTheme.colorScheme.secondaryContainer
+                            else -> MaterialTheme.colorScheme.surfaceVariant
+                        }
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = getFileTypeIcon(document.fileType),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(40.dp)
-                )
-            }
+                when (document.processingStatus) {
+                    ProcessingStatus.COMPLETED -> {
+                        Icon(
+                            when (document.fileType) {
+                                FileType.PDF -> Icons.Default.PictureAsPdf
+                                FileType.EPUB -> Icons.Default.Book
+                                FileType.MARKDOWN -> Icons.Default.Description
+                                else -> Icons.Default.InsertDriveFile
+                            },
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                    ProcessingStatus.PROCESSING -> {
+                        CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                    }
+                    else -> {
+                        Icon(
+                            Icons.Default.CloudDownload,
+                            contentDescription = null,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = document.title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
                 if (isPinned) {
                     Icon(
-                        imageVector = Icons.Default.PushPin,
+                        Icons.Default.PushPin,
                         contentDescription = "Pinned",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp)
+                            .size(16.dp),
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
             }
 
-            Text(
-                text = "${document.pageCount} pages",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            if (document.processingStatus == ProcessingStatus.PROCESSING) {
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp)
+            Column(modifier = Modifier.padding(8.dp)) {
+                Text(
+                    document.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    "${document.pageCount} pages",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -340,22 +579,19 @@ private fun DocumentCard(
 }
 
 @Composable
-private fun DocumentListItem(
+fun DocumentListItem(
     document: Document,
     onClick: () -> Unit,
-    onPin: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit = {},
+    onMove: () -> Unit = {},
+    onTogglePin: () -> Unit = {}
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+            .clickable(onClick = onClick)
     ) {
         Row(
             modifier = Modifier
@@ -363,73 +599,98 @@ private fun DocumentListItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(getFileTypeColor(document.fileType).copy(alpha = 0.1f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = getFileTypeIcon(document.fileType),
-                    contentDescription = null,
-                    tint = getFileTypeColor(document.fileType),
-                    modifier = Modifier.size(24.dp)
-                )
-            }
+            // File type icon
+            Icon(
+                when (document.fileType) {
+                    FileType.PDF -> Icons.Default.PictureAsPdf
+                    FileType.EPUB -> Icons.Default.Book
+                    FileType.MARKDOWN -> Icons.Default.Description
+                    else -> Icons.Default.InsertDriveFile
+                },
+                contentDescription = null,
+                modifier = Modifier.size(40.dp),
+                tint = when (document.fileType) {
+                    FileType.PDF -> Color(0xFFE53935)
+                    FileType.EPUB -> Color(0xFF43A047)
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
 
             Spacer(modifier = Modifier.width(12.dp))
 
+            // Document info
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = document.title,
+                    document.title,
                     style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    fontWeight = FontWeight.Medium
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Text(
-                        text = "${document.pageCount} pages",
+                        "${document.pageCount} pages",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    if (document.processingStatus == ProcessingStatus.PROCESSING) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(12.dp),
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Processing",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                    when (document.processingStatus) {
+                        ProcessingStatus.PROCESSING -> {
+                            Text(
+                                "Processing...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                        ProcessingStatus.FAILED -> {
+                            Text(
+                                "Failed",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        else -> {}
                     }
                 }
             }
 
-            IconButton(onClick = onPin) {
-                Icon(
-                    imageVector = if (document.isPinned) Icons.Default.PushPin else Icons.Default.PushPin,
-                    contentDescription = if (document.isPinned) "Unpin" else "Pin",
-                    tint = if (document.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            // Actions
+            if (document.isPinned) {
+                IconButton(onClick = onTogglePin) {
+                    Icon(
+                        Icons.Default.PushPin,
+                        contentDescription = "Unpin",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
 
             Box {
                 IconButton(onClick = { showMenu = true }) {
                     Icon(Icons.Default.MoreVert, contentDescription = "More")
                 }
-
                 DropdownMenu(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false }
                 ) {
                     DropdownMenuItem(
-                        text = { Text("Move to...") },
-                        onClick = { showMenu = false },
+                        text = { Text(if (document.isPinned) "Unpin" else "Pin") },
+                        onClick = {
+                            onTogglePin()
+                            showMenu = false
+                        },
+                        leadingIcon = {
+                            Icon(
+                                if (document.isPinned) Icons.Default.PushPin else Icons.Default.PushPin,
+                                contentDescription = null
+                            )
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Move") },
+                        onClick = {
+                            onMove()
+                            showMenu = false
+                        },
                         leadingIcon = { Icon(Icons.Default.DriveFileMove, contentDescription = null) }
                     )
                     DropdownMenuItem(
@@ -438,7 +699,13 @@ private fun DocumentListItem(
                             onDelete()
                             showMenu = false
                         },
-                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) }
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
                     )
                 }
             }
@@ -447,161 +714,38 @@ private fun DocumentListItem(
 }
 
 @Composable
-private fun FolderChip(
-    folder: Folder?,
-    onClick: () -> Unit,
-    isSelected: Boolean
-) {
-    val backgroundColor = if (isSelected) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant
-    }
-
-    val contentColor = if (isSelected) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
-
-    Surface(
-        modifier = Modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
-        color = backgroundColor
+fun EmptyState(onImportClick: () -> Unit = {}) {
+    Card(
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Icon(
-                imageVector = if (folder == null) Icons.Default.Home else Icons.Default.Folder,
+                Icons.Default.LibraryBooks,
                 contentDescription = null,
-                tint = contentColor,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(modifier = Modifier.width(6.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = folder?.name ?: "Home",
-                style = MaterialTheme.typography.bodyMedium,
-                color = contentColor
+                "No documents yet",
+                style = MaterialTheme.typography.titleMedium
             )
-            if (folder != null && folder.documentCount > 0) {
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "${folder.documentCount}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = contentColor.copy(alpha = 0.7f)
-                )
+            Text(
+                "Import your first document to get started",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = onImportClick) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Import Document")
             }
         }
-    }
-}
-
-@Composable
-private fun EmptyState() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(
-            imageVector = Icons.Default.Description,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier.size(64.dp)
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = "No documents yet",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = "Upload a document to get started",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-        )
-    }
-}
-
-@Composable
-private fun CreateFolderDialog(
-    onDismiss: () -> Unit,
-    onCreate: (String, String) -> Unit
-) {
-    var folderName by remember { mutableStateOf("") }
-    var selectedColor by remember { mutableStateOf("#6750A4") }
-
-    val colors = listOf("#6750A4", "#7D5260", "#625B71", "#3D5A80", "#8B4513", "#2E7D32")
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Create Folder") },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = folderName,
-                    onValueChange = { folderName = it },
-                    label = { Text("Folder name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Color", style = MaterialTheme.typography.labelMedium)
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    colors.forEach { color ->
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(Color(android.graphics.Color.parseColor(color)))
-                                .clickable { selectedColor = color }
-                                .then(
-                                    if (selectedColor == color) {
-                                        Modifier.padding(2.dp)
-                                    } else Modifier
-                                )
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onCreate(folderName, selectedColor) },
-                enabled = folderName.isNotBlank()
-            ) {
-                Text("Create")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
-}
-
-private fun getFileTypeIcon(fileType: FileType): androidx.compose.ui.graphics.vector.ImageVector {
-    return when (fileType) {
-        FileType.PDF -> Icons.Default.PictureAsPdf
-        FileType.EPUB -> Icons.Default.Book
-        FileType.DOC, FileType.DOCX, FileType.ODT, FileType.RTF -> Icons.Default.Article
-        FileType.TXT, FileType.MARKDOWN -> Icons.Default.TextSnippet
-        FileType.HTML -> Icons.Default.Code
-        else -> Icons.Default.Description
-    }
-}
-
-private fun getFileTypeColor(fileType: FileType): Color {
-    return when (fileType) {
-        FileType.PDF -> Color(0xFFE53935)
-        FileType.EPUB -> Color(0xFF43A047)
-        FileType.DOC, FileType.DOCX -> Color(0xFF1E88E5)
-        FileType.TXT, FileType.MARKDOWN -> Color(0xFF757575)
-        FileType.HTML -> Color(0xFFE65100)
-        else -> Color(0xFF6750A4)
     }
 }

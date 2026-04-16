@@ -3,33 +3,32 @@ package com.readflow.app.ui.reader
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.gestures.detectVerticalScrollGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.NavigateBefore
+import androidx.compose.material.icons.automirrored.filled.NavigateNext
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -38,9 +37,6 @@ import com.readflow.app.domain.model.AnnotationType
 import com.readflow.app.domain.model.Document
 import com.readflow.app.domain.model.ReadingMode
 import com.readflow.app.domain.model.ReadingTheme
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -53,7 +49,7 @@ fun ReaderScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val clipboardManager = LocalClipboardManager.current
 
     var showAnnotationMenu by remember { mutableStateOf(false) }
     var selectedText by remember { mutableStateOf("") }
@@ -65,74 +61,92 @@ fun ReaderScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = uiState.document?.title ?: "Loading...",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        if (uiState.document != null) {
+            if (uiState.isSearching) {
+                SearchTopBar(
+                    query = uiState.searchQuery,
+                    resultCount = uiState.searchResults.size,
+                    currentIndex = uiState.currentSearchIndex + 1,
+                    onQueryChange = { viewModel.search(it) },
+                    onNext = { viewModel.nextSearchResult() },
+                    onPrevious = { viewModel.previousSearchResult() },
+                    onClose = { viewModel.dismissSearch() }
+                )
+            } else {
+                TopAppBar(
+                    title = {
+                        Column {
                             Text(
-                                text = "Page ${uiState.currentPage + 1} of ${uiState.pageCount}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = uiState.document?.title ?: "Loading...",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            if (uiState.document != null) {
+                                Text(
+                                    text = "Page ${uiState.currentPage + 1} of ${uiState.pageCount}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    actions = {
+                        // Reading mode toggle
+                        IconButton(onClick = { viewModel.toggleReadingMode() }) {
+                            Icon(
+                                if (uiState.readingMode == ReadingMode.CONTINUOUS)
+                                    Icons.Default.ViewDay
+                                else
+                                    Icons.Default.ViewWeek,
+                                contentDescription = "Toggle view mode"
                             )
                         }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    // Reading mode toggle
-                    IconButton(onClick = { viewModel.toggleReadingMode() }) {
-                        Icon(
-                            if (uiState.readingMode == ReadingMode.CONTINUOUS)
-                                Icons.Default.ViewDay
-                            else
-                                Icons.Default.ViewWeek,
-                            contentDescription = "Toggle view mode"
-                        )
-                    }
 
-                    // Theme toggle
-                    IconButton(onClick = { viewModel.toggleTheme() }) {
-                        Icon(Icons.Default.Brightness6, contentDescription = "Theme")
-                    }
+                        // Theme toggle
+                        IconButton(onClick = { viewModel.toggleTheme() }) {
+                            Icon(Icons.Default.Brightness6, contentDescription = "Theme")
+                        }
 
-                    // More menu
-                    var showMenu by remember { mutableStateOf(false) }
-                    IconButton(onClick = { showMenu = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "More")
-                    }
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Table of Contents") },
-                            onClick = { showMenu = false },
-                            leadingIcon = { Icon(Icons.Default.List, null) }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Annotations") },
-                            onClick = { showMenu = false },
-                            leadingIcon = { Icon(Icons.Default.Bookmark, null) }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Search") },
-                            onClick = { showMenu = false },
-                            leadingIcon = { Icon(Icons.Default.Search, null) }
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                        // More menu
+                        var showMenu by remember { mutableStateOf(false) }
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "More")
+                        }
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Table of Contents") },
+                                onClick = { 
+                                    showMenu = false
+                                    viewModel.toggleToc()
+                                },
+                                leadingIcon = { Icon(Icons.Default.List, null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Search") },
+                                onClick = { 
+                                    showMenu = false
+                                    viewModel.startSearch()
+                                },
+                                leadingIcon = { Icon(Icons.Default.Search, null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Annotations") },
+                                onClick = { showMenu = false },
+                                leadingIcon = { Icon(Icons.Default.Bookmark, null) }
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
                 )
-            )
+            }
         }
     ) { padding ->
         Box(
@@ -166,25 +180,11 @@ fun ReaderScreen(
                 }
                 uiState.document != null -> {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        // Page content
+                        // Main content area
                         Box(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth()
-                                .pointerInput(Unit) {
-                                    detectTapGestures(
-                                        onLongPress = { offset ->
-                                            // Simulate text selection
-                                            selectedText = "Selected text sample"
-                                            selectionPageIndex = uiState.currentPage
-                                            showAnnotationMenu = true
-                                        },
-                                        onDoubleTap = {
-                                            // Zoom toggle
-                                            viewModel.toggleZoom()
-                                        }
-                                    )
-                                }
                         ) {
                             // PDF Page content
                             PdfPageView(
@@ -193,10 +193,12 @@ fun ReaderScreen(
                                 zoomLevel = uiState.zoomLevel,
                                 theme = uiState.theme,
                                 annotations = uiState.annotations,
-                                onPageChange = { viewModel.goToPage(it) },
-                                onAnnotationClick = { annotation ->
-                                    // Handle annotation click
-                                }
+                                onLongPress = { offset ->
+                                    selectedText = "Selected text sample"
+                                    selectionPageIndex = uiState.currentPage
+                                    showAnnotationMenu = true
+                                },
+                                onPageChange = { viewModel.goToPage(it) }
                             )
                         }
 
@@ -207,12 +209,28 @@ fun ReaderScreen(
                             onPageChange = { viewModel.goToPage(it) },
                             onPreviousPage = { viewModel.previousPage() },
                             onNextPage = { viewModel.nextPage() },
+                            onTocClick = { viewModel.toggleToc() },
+                            onSearchClick = { viewModel.startSearch() },
                             onAiClick = {
                                 onAiClick(documentId, uiState.currentPage, selectedText)
-                            }
+                            },
+                            onNotesClick = { }
                         )
                     }
                 }
+            }
+
+            // Table of Contents Panel
+            if (uiState.showToc) {
+                TableOfContentsPanel(
+                    tocItems = uiState.tableOfContents,
+                    currentPage = uiState.currentPage,
+                    onItemClick = { tocItem ->
+                        viewModel.goToPage(tocItem.pageIndex)
+                        viewModel.toggleToc()
+                    },
+                    onClose = { viewModel.toggleToc() }
+                )
             }
         }
     }
@@ -267,14 +285,148 @@ fun ReaderScreen(
                 showAnnotationMenu = false
             },
             onCopy = {
-                // Copy to clipboard
+                clipboardManager.setText(AnnotatedString(selectedText))
                 showAnnotationMenu = false
             },
             onShare = {
-                // Share text
                 showAnnotationMenu = false
             }
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SearchTopBar(
+    query: String,
+    resultCount: Int,
+    currentIndex: Int,
+    onQueryChange: (String) -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    onClose: () -> Unit
+) {
+    TopAppBar(
+        title = {
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    color = MaterialTheme.colorScheme.onSurface
+                ),
+                decorationBox = { innerTextField ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (query.isEmpty()) {
+                                Text(
+                                    "Search in document...",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            innerTextField()
+                        }
+                    }
+                }
+            )
+        },
+        navigationIcon = {
+            IconButton(onClick = onClose) {
+                Icon(Icons.Default.Close, contentDescription = "Close search")
+            }
+        },
+        actions = {
+            if (resultCount > 0) {
+                Text(
+                    "$currentIndex / $resultCount",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+            }
+            IconButton(onClick = onPrevious, enabled = resultCount > 0) {
+                Icon(Icons.AutoMirrored.Filled.NavigateBefore, contentDescription = "Previous")
+            }
+            IconButton(onClick = onNext, enabled = resultCount > 0) {
+                Icon(Icons.AutoMirrored.Filled.NavigateNext, contentDescription = "Next")
+            }
+        }
+    )
+}
+
+@Composable
+fun TableOfContentsPanel(
+    tocItems: List<TocItem>,
+    currentPage: Int,
+    onItemClick: (TocItem) -> Unit,
+    onClose: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxHeight()
+            .width(280.dp),
+        shadowElevation = 8.dp,
+        color = MaterialTheme.colorScheme.surface
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Table of Contents",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Default.Close, contentDescription = "Close")
+                }
+            }
+            Divider()
+            LazyColumn(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                itemsIndexed(tocItems) { index, item ->
+                    val isCurrentPage = item.pageIndex == currentPage
+                    ListItem(
+                        headlineContent = {
+                            Text(
+                                item.title,
+                                fontWeight = if (isCurrentPage) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isCurrentPage) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onItemClick(item) }
+                            .background(
+                                if (isCurrentPage) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                                else Color.Transparent
+                            ),
+                        leadingContent = {
+                            if (item.level > 0) {
+                                Spacer(modifier = Modifier.width((item.level * 16).dp))
+                            }
+                            Text(
+                                "${item.pageIndex + 1}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -285,11 +437,10 @@ fun PdfPageView(
     zoomLevel: Float,
     theme: ReadingTheme,
     annotations: List<Annotation>,
-    onPageChange: (Int) -> Unit,
-    onAnnotationClick: (Annotation) -> Unit
+    onLongPress: (androidx.compose.ui.geometry.Offset) -> Unit,
+    onPageChange: (Int) -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
 
     var pageBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -302,34 +453,33 @@ fun PdfPageView(
 
     val textColor = when (theme) {
         ReadingTheme.LIGHT -> Color.Black
-        ReadingTheme.DARK -> Color(0xFFE6E1E5)
-        ReadingTheme.SEPIA -> Color(0xFF5B4636)
+        ReadingTheme.DARK -> Color.White
+        ReadingTheme.SEPIA -> Color(0xFF5D4037)
     }
 
-    LaunchedEffect(pageIndex, document) {
+    LaunchedEffect(pageIndex, document.filePath) {
         isLoading = true
-        withContext(Dispatchers.IO) {
-            try {
-                // Load PDF page using PdfRenderer
-                val file = File(document.filePath)
-                if (file.exists()) {
-                    val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-                    val renderer = PdfRenderer(fd)
-                    if (pageIndex < renderer.pageCount) {
-                        renderer.openPage(pageIndex).use { page ->
-                            val width = (page.width * 2).coerceAtMost(1200)
-                            val height = (page.height * 2).coerceAtMost(1600)
-                            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                            bitmap.eraseColor(android.graphics.Color.WHITE)
-                            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                            pageBitmap = bitmap
-                        }
+        try {
+            // Try to render the PDF page
+            val file = File(document.filePath)
+            if (file.exists()) {
+                val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+                val renderer = PdfRenderer(fd)
+                if (pageIndex < renderer.pageCount) {
+                    renderer.openPage(pageIndex).use { page ->
+                        val width = (page.width * zoomLevel).toInt().coerceAtLeast(1)
+                        val height = (page.height * zoomLevel).toInt().coerceAtLeast(1)
+                        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                        bitmap.eraseColor(android.graphics.Color.WHITE)
+                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        pageBitmap = bitmap
                     }
-                    fd.close()
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
+                renderer.close()
+                fd.close()
             }
+        } catch (e: Exception) {
+            // Ignore errors, show demo content
         }
         isLoading = false
     }
@@ -338,14 +488,25 @@ fun PdfPageView(
         modifier = Modifier
             .fillMaxSize()
             .background(backgroundColor)
-            .graphicsLayer {
-                scaleX = zoomLevel
-                scaleY = zoomLevel
-            },
-        contentAlignment = Alignment.Center
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onLongPress = { offset ->
+                        onLongPress(offset)
+                    },
+                    onDoubleTap = {
+                        // Toggle zoom
+                    }
+                )
+            }
+            .verticalScroll(rememberScrollState())
     ) {
         if (isLoading) {
-            CircularProgressIndicator()
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
         } else if (pageBitmap != null) {
             Image(
                 bitmap = pageBitmap!!.asImageBitmap(),
@@ -374,20 +535,20 @@ fun PdfPageView(
                 )
                 Spacer(modifier = Modifier.height(32.dp))
                 Text(
-                    text = "This is a demo page.\nIn production, this would display the actual PDF content using Android's native PdfRenderer API.",
+                    text = "This is a demo page.\nIn production, this would display the actual PDF content.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = textColor.copy(alpha = 0.7f)
                 )
             }
         }
 
-        // Annotation overlays would be drawn here
+        // Annotation overlays
         annotations
             .filter { it.pageIndex == pageIndex }
             .forEach { annotation ->
                 AnnotationOverlay(
                     annotation = annotation,
-                    onClick = { onAnnotationClick(annotation) }
+                    onClick = { }
                 )
             }
     }
@@ -433,7 +594,10 @@ fun BottomToolbar(
     onPageChange: (Int) -> Unit,
     onPreviousPage: () -> Unit,
     onNextPage: () -> Unit,
-    onAiClick: () -> Unit
+    onTocClick: () -> Unit,
+    onSearchClick: () -> Unit,
+    onAiClick: () -> Unit,
+    onNotesClick: () -> Unit
 ) {
     Surface(
         shadowElevation = 8.dp,
@@ -482,31 +646,31 @@ fun BottomToolbar(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                ActionButton(
-                    icon = Icons.Default.LibraryBooks,
+                ToolbarActionButton(
+                    icon = Icons.Default.List,
                     label = "TOC",
-                    onClick = {}
+                    onClick = onTocClick
                 )
-                ActionButton(
+                ToolbarActionButton(
                     icon = Icons.Default.Search,
                     label = "Search",
-                    onClick = {}
+                    onClick = onSearchClick
                 )
-                ActionButton(
+                ToolbarActionButton(
                     icon = Icons.Default.Translate,
                     label = "AI",
                     onClick = onAiClick,
                     isPrimary = true
                 )
-                ActionButton(
-                    icon = Icons.Default.Bookmark,
+                ToolbarActionButton(
+                    icon = Icons.Default.StickyNote2,
                     label = "Notes",
-                    onClick = {}
+                    onClick = onNotesClick
                 )
-                ActionButton(
+                ToolbarActionButton(
                     icon = Icons.Default.Info,
                     label = "Info",
-                    onClick = {}
+                    onClick = { }
                 )
             }
         }
@@ -514,8 +678,8 @@ fun BottomToolbar(
 }
 
 @Composable
-private fun ActionButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+private fun ToolbarActionButton(
+    icon: ImageVector,
     label: String,
     onClick: () -> Unit,
     isPrimary: Boolean = false
@@ -566,6 +730,7 @@ fun SelectionActionSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp)
+                .imePadding()
         ) {
             // Selected text preview
             if (selectedText.isNotEmpty()) {
@@ -585,7 +750,7 @@ fun SelectionActionSheet(
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            // Annotation tools
+            // Highlight colors
             Text(
                 text = "Highlight",
                 style = MaterialTheme.typography.labelMedium,
@@ -608,18 +773,18 @@ fun SelectionActionSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // More actions
+            // Annotation actions
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                ActionChip(
+                ActionChipButton(
                     icon = Icons.Default.FormatUnderlined,
                     label = "Underline",
                     modifier = Modifier.weight(1f),
                     onClick = { onUnderline("#03A9F4") }
                 )
-                ActionChip(
+                ActionChipButton(
                     icon = Icons.Default.StickyNote2,
                     label = "Note",
                     modifier = Modifier.weight(1f),
@@ -640,19 +805,19 @@ fun SelectionActionSheet(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                ActionChip(
+                ActionChipButton(
                     icon = Icons.Default.Translate,
                     label = "Translate",
                     modifier = Modifier.weight(1f),
                     onClick = onAiTranslate
                 )
-                ActionChip(
+                ActionChipButton(
                     icon = Icons.Default.Lightbulb,
                     label = "Explain",
                     modifier = Modifier.weight(1f),
                     onClick = onAiExplain
                 )
-                ActionChip(
+                ActionChipButton(
                     icon = Icons.Default.Summarize,
                     label = "Summarize",
                     modifier = Modifier.weight(1f),
@@ -667,13 +832,13 @@ fun SelectionActionSheet(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                ActionChip(
+                ActionChipButton(
                     icon = Icons.Default.ContentCopy,
                     label = "Copy",
                     modifier = Modifier.weight(1f),
                     onClick = onCopy
                 )
-                ActionChip(
+                ActionChipButton(
                     icon = Icons.Default.Share,
                     label = "Share",
                     modifier = Modifier.weight(1f),
@@ -687,8 +852,8 @@ fun SelectionActionSheet(
 }
 
 @Composable
-private fun ActionChip(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+private fun ActionChipButton(
+    icon: ImageVector,
     label: String,
     modifier: Modifier = Modifier,
     onClick: () -> Unit

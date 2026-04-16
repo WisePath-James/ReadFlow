@@ -3,6 +3,7 @@ package com.readflow.app.ui.settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
@@ -197,7 +198,7 @@ private fun ColorSettingItem(
                     shape = androidx.compose.foundation.shape.CircleShape,
                     color = androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(color)),
                     border = if (selectedColor == color) {
-                        ButtonDefaults.outlinedButtonBorder(enabled = true)
+                        BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
                     } else null,
                     modifier = Modifier.size(36.dp)
                 ) {}

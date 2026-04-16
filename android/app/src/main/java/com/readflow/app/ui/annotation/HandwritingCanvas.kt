@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -228,7 +229,7 @@ fun HandwritingToolbar(
                 )
             }
 
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            Divider(modifier = Modifier.padding(vertical = 8.dp))
 
             // Color selection
             Text(
@@ -270,7 +271,7 @@ fun HandwritingToolbar(
                 }
             }
 
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            Divider(modifier = Modifier.padding(vertical = 8.dp))
 
             // Undo/Redo/Clear
             Row(
@@ -335,7 +336,7 @@ private fun ColorButton(
         shape = RoundedCornerShape(50),
         color = color,
         border = if (isSelected) {
-            ButtonDefaults.outlinedButtonBorder(enabled = true)
+            BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
         } else null,
         modifier = Modifier.size(32.dp)
     ) {}
